@@ -6,6 +6,8 @@ from datetime import datetime
 import pandas as pd
 import os
 import tqdm
+from airflow.models import Variable
+import warnings
 
 sources = ['https://www.dawn.com/']
 links = [[] for i in range(len(sources))]
@@ -13,7 +15,7 @@ links_dataframe = None
 
 def extract():
 
-    links_dataframe = None
+    links_dataframe = None    
     
     for i, source in enumerate(sources):
         reqs = requests.get(source)
@@ -30,18 +32,19 @@ def extract():
 
     print(links_dataframe.head())
 
-    return links_dataframe
+    Variable.set("links_dataframe", links_dataframe.to_json(), serialize_json=True)
+
+    
 
 
 def transform(**kwargs):
 
-    task_instance = kwargs['task_instance']
+    links_dataframe = Variable.get("links_dataframe", deserialize_json=True)
+
+    if type(links_dataframe) != pd.DataFrame:
+        links_dataframe = pd.read_json(links_dataframe)
 
     print("Transformation")
-
-    links_dataframe = task_instance.xcom_pull(task_ids='Extract_Task',)
-
-    # global links_dataframe
 
     # clean the links dataframe to remove any empty links
     links_dataframe = links_dataframe[links_dataframe['Links'].apply(lambda x: len(x) > 0)]
@@ -82,26 +85,28 @@ def transform(**kwargs):
 
     print(data.head())
 
-    task_instance.xcom_push(key='links_dataframe', value=links_dataframe)
-
+    Variable.set("links_dataframe", links_dataframe.to_json(), serialize_json=True)
 
 def load(**kwargs):
 
-    task_instance = kwargs['task_instance']
+    links_dataframe = Variable.get("links_dataframe", deserialize_json=True)
 
-    links_dataframe = task_instance.xcom_pull(task_ids='Transform_Task', key='links_dataframe')
+    if type(links_dataframe) != pd.DataFrame:
+        links_dataframe = pd.read_json(links_dataframe)
 
     print("Loading")
-    
-    links_dataframe.to_csv('./data/links.csv', index=False)
 
+    # print(os.getcwd())    
+
+    # if not os.path.exists('./data'):
+    #     os.makedirs('./data')
+
+    links_dataframe.to_csv('/home/fasih/i200432_MLOps_A2/data/links.csv', index=False)
     print("Data saved to links.csv")
 
-    os.system('dvc add ./data/links.csv')
-    os.system('git add data.dvc')
-    os.system('git commit -m "Updated dataset"')
-    os.system('git push origin main')
-    os.system('dvc push')
+    commands = ['cd /home/fasih/i200432_MLOps_A2/', 'dvc add ./data/links.csv', 'git add data.dvc', 'git commit -m "Updated dataset"', 'git push origin main', 'dvc push']
+
+    os.system(' && '.join(commands))
 
     print("Data uploaded to dvc, pull the changes in your local repository to get the updated data.")
 
