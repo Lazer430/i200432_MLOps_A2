@@ -13,7 +13,7 @@ links_dataframe = None
 
 def extract():
 
-    global links_dataframe
+    links_dataframe = None
     
     for i, source in enumerate(sources):
         reqs = requests.get(source)
@@ -30,11 +30,18 @@ def extract():
 
     print(links_dataframe.head())
 
+    return links_dataframe
 
-def transform():
+
+def transform(**kwargs):
+
+    task_instance = kwargs['task_instance']
+
     print("Transformation")
 
-    global links_dataframe
+    links_dataframe = task_instance.xcom_pull(task_ids='Extract_Task',)
+
+    # global links_dataframe
 
     # clean the links dataframe to remove any empty links
     links_dataframe = links_dataframe[links_dataframe['Links'].apply(lambda x: len(x) > 0)]
@@ -64,7 +71,7 @@ def transform():
             description = " ".join([p.get_text() for p in soup.find_all('p')])
             if description == '' or description == ' ':
                 continue
-            
+
             # preprocess description to remove symbols
             description = description.encode('ascii', 'ignore').decode('ascii')
             description = description.replace('\n', ' ')
@@ -75,7 +82,15 @@ def transform():
 
     print(data.head())
 
-def load():
+    task_instance.xcom_push(key='links_dataframe', value=links_dataframe)
+
+
+def load(**kwargs):
+
+    task_instance = kwargs['task_instance']
+
+    links_dataframe = task_instance.xcom_pull(task_ids='Transform_Task', key='links_dataframe')
+
     print("Loading")
     
     links_dataframe.to_csv('./data/links.csv', index=False)
@@ -91,8 +106,12 @@ def load():
     print("Data uploaded to dvc, pull the changes in your local repository to get the updated data.")
 
 
+
+# if __name__ == "__main__":
+    # define apache airflow pipeline
+
 default_args = {
-    'owner' : 'airflow-demo'
+'owner' : 'airflow-demo',
 }
 
 dag = DAG(
@@ -101,28 +120,23 @@ dag = DAG(
     description='A simple '
 )
 
-
+# with dag:
 task1 = PythonOperator(
-    task_id = "Task_1",
+    task_id = "Extract_Task",
     python_callable = extract,
     dag = dag
 )
 
 task2 = PythonOperator(
-    task_id = "Task_2",
+    task_id = "Transform_Task",
     python_callable = transform,
     dag=dag
 )
 
 task3 = PythonOperator(
-    task_id = "Task_3",
+    task_id = "Load_Task",
     python_callable = load,
     dag=dag
 )
 
 task1 >> task2 >> task3
-
-if __name__ == "__main__":
-    extract()
-    transform()
-    load()
