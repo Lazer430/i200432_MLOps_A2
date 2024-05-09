@@ -4,8 +4,9 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime
 import pandas as pd
+import os
 
-sources = ['https://www.dawn.com/', 'https://www.bbc.com/']
+sources = ['https://www.dawn.com/', 'https://www.bbc.com/', 'https://www.aljazeera.com/']
 links = [[] for i in range(len(sources))]
 links_dataframe = None
 
@@ -49,7 +50,12 @@ def load():
 
     print("Data saved to links.csv")
 
+    os.system('dvc add ./data/links.csv')
+    os.system('git add data.dvc')
+    os.system('git commit -m "Updated dataset"')
+    os.system('git push origin main')
 
+    print("Data uploaded to dvc")
 
 
 default_args = {
