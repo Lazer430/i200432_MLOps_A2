@@ -7,12 +7,12 @@ import pandas as pd
 import os
 import tqdm
 from airflow.models import Variable
-import warnings
 
-sources = ['https://www.dawn.com/']
+sources = ['https://www.dawn.com/', 'https://www.bbc.com/']
 links = [[] for i in range(len(sources))]
 links_dataframe = None
 
+# this function extracts all of the links from the sources
 def extract():
 
     links_dataframe = None    
@@ -30,24 +30,9 @@ def extract():
     # only keep top 20 links for speed
     links_dataframe['Links'] = links_dataframe['Links'].apply(lambda x: x[:20])
 
-    print(links_dataframe.head())
-
-    Variable.set("links_dataframe", links_dataframe.to_json(), serialize_json=True)
-
-    
-
-
-def transform(**kwargs):
-
-    links_dataframe = Variable.get("links_dataframe", deserialize_json=True)
-
-    if type(links_dataframe) != pd.DataFrame:
-        links_dataframe = pd.read_json(links_dataframe)
-
-    print("Transformation")
-
     # clean the links dataframe to remove any empty links
-    links_dataframe = links_dataframe[links_dataframe['Links'].apply(lambda x: len(x) > 0)]
+    links_dataframe['links'] = links_dataframe['Links'].apply(lambda x: len(x) > 0)
+
     # remove any duplicate links
     links_dataframe['Links'] = links_dataframe['Links'].apply(lambda x: list(set(x)))
 
@@ -56,10 +41,25 @@ def transform(**kwargs):
 
     print(links_dataframe.head())
 
-    # extract titles and descriptions of the links
+    Variable.set("links_dataframe", links_dataframe.to_json(), serialize_json=True)
+
+    
+
+# this function extracts the titles and decriptions then preprocesses them
+def transform(**kwargs):
+
+    links_dataframe = Variable.get("links_dataframe", deserialize_json=True) # data from step 1
+
+    if type(links_dataframe) != pd.DataFrame:
+        links_dataframe = pd.read_json(links_dataframe)
+
+    print("Transformation")
+
+    print(links_dataframe.head())
+
+    # extract titles and descriptions of the links and preprocess them
     data = pd.DataFrame(columns=['Link', 'Title', 'Description'])
     for i, source in enumerate(sources):
-        #for link in links_dataframe.loc[i, 'Links']:
         for link in tqdm.tqdm(links_dataframe.loc[i, 'Links']):
             reqs = requests.get(link)
             if reqs.status_code != 200:
@@ -85,36 +85,31 @@ def transform(**kwargs):
 
     print(data.head())
 
-    Variable.set("links_dataframe", links_dataframe.to_json(), serialize_json=True)
+    Variable.set("links_dataframe", links_dataframe.to_json(), serialize_json=True) # update data for step 3
 
 def load(**kwargs):
 
-    links_dataframe = Variable.get("links_dataframe", deserialize_json=True)
+    links_dataframe = Variable.get("links_dataframe", deserialize_json=True) # get data from step 2
 
     if type(links_dataframe) != pd.DataFrame:
         links_dataframe = pd.read_json(links_dataframe)
 
     print("Loading")
 
-    # print(os.getcwd())    
-
-    # if not os.path.exists('./data'):
-    #     os.makedirs('./data')
-
+    # create csv dataset
     links_dataframe.to_csv('/home/fasih/i200432_MLOps_A2/data/links.csv', index=False)
     print("Data saved to links.csv")
 
-    commands = ['cd /home/fasih/i200432_MLOps_A2/', 'dvc add ./data/links.csv', 'git add data.dvc', 'git commit -m "Updated dataset"', 'git push origin main', 'dvc push']
+    # push the changes to git and dvc
+    commands = ['cd /home/fasih/i200432_MLOps_A2/', 'dvc add ./data/links.csv', 'git add data.dvc', 'git commit -m "Updated dataset"']
+    commands2 = ['git push origin main', 'dvc push'] 
 
     os.system(' && '.join(commands))
+    os.system(' && '.join(commands2))
 
     print("Data uploaded to dvc, pull the changes in your local repository to get the updated data.")
 
-
-
-# if __name__ == "__main__":
-    # define apache airflow pipeline
-
+# default arguments for the DAG
 default_args = {
 'owner' : 'airflow-demo',
 }
@@ -122,22 +117,24 @@ default_args = {
 dag = DAG(
     'mlops-dag',
     default_args=default_args,
-    description='A simple '
+    description='A simple DAG for MLOps Assignment 2',
 )
 
-# with dag:
+# exraction task
 task1 = PythonOperator(
     task_id = "Extract_Task",
     python_callable = extract,
     dag = dag
 )
 
+# transformation task
 task2 = PythonOperator(
     task_id = "Transform_Task",
     python_callable = transform,
     dag=dag
 )
 
+# loading task
 task3 = PythonOperator(
     task_id = "Load_Task",
     python_callable = load,
