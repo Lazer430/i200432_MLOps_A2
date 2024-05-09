@@ -45,8 +45,9 @@ def transform():
 def load():
     print("Loading")
     
-    global links_dataframe
-    
+    links_dataframe.to_csv('./data/links.csv', index=False)
+
+    print("Data saved to links.csv")
 
 
 
