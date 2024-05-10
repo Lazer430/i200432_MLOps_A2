@@ -39,6 +39,29 @@ def extract():
     # remove incomplete links
     links_dataframe['Links'] = links_dataframe['Links'].apply(lambda x: [link for link in x if link.startswith('http')])
 
+
+    # extract titles and descriptions of the links and preprocess them
+    data = pd.DataFrame(columns=['Link', 'Title', 'Description'])
+    for i, source in enumerate(sources):
+        for link in tqdm.tqdm(links_dataframe.loc[i, 'Links']):
+            reqs = requests.get(link)
+            if reqs.status_code != 200:
+                continue
+            soup = BeautifulSoup(reqs.text, 'html.parser')
+            title = soup.find('title')
+            title = title.get_text() if title else ''
+            
+            if title == None or title == '' or title == ' ':
+                continue
+
+            description = " ".join([p.get_text() for p in soup.find_all('p')])
+            if description == None or description == '' or description == ' ':
+                continue
+
+            data = data._append({'Link': link, 'Title': title, 'Description': description}, ignore_index=True)
+
+    links_dataframe = data
+
     print(links_dataframe.head())
 
     Variable.set("links_dataframe", links_dataframe.to_json(), serialize_json=True)
@@ -55,36 +78,31 @@ def transform(**kwargs):
 
     print("Transformation")
 
+    # process the titles
+    links_dataframe['Title'] = links_dataframe['Title'].apply(lambda x: x.encode('ascii', 'ignore').decode('ascii'))
+    links_dataframe['Title'] = links_dataframe['Title'].apply(lambda x: x.replace('\n', ' '))
+    links_dataframe['Title'] = links_dataframe['Title'].apply(lambda x: x.replace('\r', ' '))
+    links_dataframe['Title'] = links_dataframe['Title'].apply(lambda x: x.replace('\t', ' '))
+    
+    # preprocess description to remove symbols
+    links_dataframe['Description'] = links_dataframe['Description'].apply(lambda x: x.encode('ascii', 'ignore').decode('ascii'))
+    links_dataframe['Description'] = links_dataframe['Description'].apply(lambda x: x.replace('\n', ' '))
+    links_dataframe['Description'] = links_dataframe['Description'].apply(lambda x: x.replace('\r', ' '))
+    links_dataframe['Description'] = links_dataframe['Description'].apply(lambda x: x.replace('\t', ' '))
+
+
+    # remove any rows with empty titles or descriptions
+    links_dataframe = links_dataframe[links_dataframe['Title'] != '']
+    links_dataframe = links_dataframe[links_dataframe['Description'] != '']
+
+    # make titles lowercase
+    links_dataframe['Title'] = links_dataframe['Title'].apply(lambda x: x.lower())
+    
+    # make descriptions lowercase
+    links_dataframe['Description'] = links_dataframe['Description'].apply(lambda x: x.lower())
+
     print(links_dataframe.head())
-
-    # extract titles and descriptions of the links and preprocess them
-    data = pd.DataFrame(columns=['Link', 'Title', 'Description'])
-    for i, source in enumerate(sources):
-        for link in tqdm.tqdm(links_dataframe.loc[i, 'Links']):
-            reqs = requests.get(link)
-            if reqs.status_code != 200:
-                continue
-            soup = BeautifulSoup(reqs.text, 'html.parser')
-            title = soup.find('title')
-            title = title.get_text() if title else ''
-            if title:
-                title = title.encode('ascii', 'ignore').decode('ascii')
-            else:
-                continue
-            description = " ".join([p.get_text() for p in soup.find_all('p')])
-            if description == '' or description == ' ':
-                continue
-
-            # preprocess description to remove symbols
-            description = description.encode('ascii', 'ignore').decode('ascii')
-            description = description.replace('\n', ' ')
-            description = description.replace('\r', ' ')
-            data = data._append({'Link': link, 'Title': title, 'Description': description}, ignore_index=True)
-
-    links_dataframe = data
-
-    print(data.head())
-
+    
     Variable.set("links_dataframe", links_dataframe.to_json(), serialize_json=True) # update data for step 3
 
 def load(**kwargs):
@@ -108,6 +126,11 @@ def load(**kwargs):
     os.system(' && '.join(commands2))
 
     print("Data uploaded to dvc, pull the changes in your local repository to get the updated data.")
+
+# if __name__ == "__main__":
+#     extract()
+#     transform()
+#     load()
 
 # default arguments for the DAG
 default_args = {
