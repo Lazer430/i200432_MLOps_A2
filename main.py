@@ -118,9 +118,9 @@ def load(**kwargs):
     links_dataframe.to_csv('/home/fasih/i200432_MLOps_A2/data/links.csv', index=False)
     print("Data saved to links.csv")
 
-    # push the changes to git and dvc
-    commands = ['cd /home/fasih/i200432_MLOps_A2/', 'dvc add ./data/links.csv', 'git add data.dvc', 'git commit -m "Updated dataset"']
-    commands2 = ['git push origin main', 'dvc push'] 
+    # version the dataset and push to dvc
+    commands = ['cd /home/fasih/i200432_MLOps_A2/', 'dvc add ./data/links.csv', 'dvc push']
+    commands2 = ['cd /home/fasih/i200432_MLOps_A2/', 'git add data.dvc', 'git commit -m "Updated dataset"','git push origin main'] 
 
     os.system(' && '.join(commands))
     os.system(' && '.join(commands2))
